@@ -130,7 +130,7 @@ def main():
     parser = argparse.ArgumentParser(description="Send or receive packets with specified Class of Service (CoS)")
     parser.add_argument("-c", metavar="IP_ADDRESS", help="Send packets with specified CoS to the given IP address")
     parser.add_argument("-s", action="store_true", help="Expect packets with a specified CoS")
-    parser.add_argument("--cos", type=int, default = 114, help="Specify the Class of Service (CoS) for the packets")
+    parser.add_argument("--cos", type=int, help="Specify the Class of Service (CoS) for the packets")
     parser.add_argument("--inf", action="store_true", default=False, help="Send packets continuously until interrupted")
     parser.add_argument("--load", type=int, help="Specify the size of the packet payload in bytes")
 
@@ -144,7 +144,8 @@ def main():
     elif args.s:
         # Set up signal handler for SIGINT (Ctrl+C) to exit the server
         signal.signal(signal.SIGINT, signal_handler)
-
+        if not args.cos:
+            args.cos = 114
         # Continuously listen for packets
         while True:
             receive_packets(args.cos)
