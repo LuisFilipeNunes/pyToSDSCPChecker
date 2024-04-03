@@ -79,6 +79,9 @@ def receive_packets(expected_cos):
         payload = packet[Raw].load.decode() if packet.haslayer(Raw) else ""
         src_ip = packet[IP].src
         cos = packet[IP].tos >> 3
+        if expected_cos == 114:
+            expected_cos = cos
+        
         if cos == expected_cos:
             # Calculate transfer for this packet
             transfer = len(payload)
@@ -127,7 +130,7 @@ def main():
     parser = argparse.ArgumentParser(description="Send or receive packets with specified Class of Service (CoS)")
     parser.add_argument("-c", metavar="IP_ADDRESS", help="Send packets with specified CoS to the given IP address")
     parser.add_argument("-s", action="store_true", help="Expect packets with a specified CoS")
-    parser.add_argument("--cos", type=int, help="Specify the Class of Service (CoS) for the packets")
+    parser.add_argument("--cos", type=int, default = 114, help="Specify the Class of Service (CoS) for the packets")
     parser.add_argument("--inf", action="store_true", default=False, help="Send packets continuously until interrupted")
     parser.add_argument("--load", type=int, help="Specify the size of the packet payload in bytes")
 
