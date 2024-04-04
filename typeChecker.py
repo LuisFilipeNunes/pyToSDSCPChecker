@@ -1,3 +1,5 @@
+#Luis Nunes
+
 import argparse
 import random
 import string
@@ -7,9 +9,6 @@ import time
 from scapy.layers.inet import IP, UDP, TCP
 from scapy.all import *
 from tabulate import tabulate
-
-
-
 
 # Global variables to track transfer and throughput
 start_time = time.time()
