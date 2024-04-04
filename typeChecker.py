@@ -16,73 +16,93 @@ start_time = time.time()
 INTERVAL = 0.4 # Interval 40% of a second.
 MAX_PAYLOAD_SIZE = 65535 # Maximum size allowed for TCP checksum calculation.
 
-def packet_crafter(ip_address, cos, message_size_bytes=None):
+
+def calculate_bit_operation(tos, reverse = False):  
+    transformations = {
+        11: 40,  12: 48,  13: 56,
+        21: 72,  22: 80,  23: 88,
+        31: 104, 32: 112, 33: 120,
+        41: 136, 42: 144, 43: 152
+    }
+    
+    #go dict lookup go
+    if reverse:
+        for key, value in transformations.items():
+            if value == tos:
+                return key
+        return tos/32
+        
+    if tos <= 7:
+        return tos*32
+        
+    return transformations.get(tos, 0)
+    
+def packet_crafter(ip_address, tos, message_size_bytes=None):
     """
-    Crafts an IPv4 packet with the specified CoS value and payload.
+    Crafts an IPv4 packet with the specified tos value and payload.
 
     Args:
         ip_address (str): The destination IP address.
-        cos (int): The Class of Service (CoS) value.
-        message_size_kb (int): The size of the message payload in kilobytes.
+        tos (int): The Type of Service (tos) value.
+        message_size_bytes (int): The size of the message payload in bytes.
     """
     if message_size_bytes:
         # Generate random data of the specified size
         payload = ''.join(random.choices(string.ascii_letters + string.digits, k=message_size_bytes))
     else:
         payload = "Hello, this is a test message"  # Default message
-
-    packet = IP(dst=ip_address, tos=cos << 3) / TCP(sport=12345, dport=12345) / Raw(load=payload)
+    packet = IP(dst=ip_address, tos=calculate_bit_operation(tos)) / UDP(sport=12345, dport=12345) / Raw(load=payload)
     send(packet, verbose=False)
-
-    transfer = len(payload.encode())
-    print("Placeholder. just sent the packet.")
-    print(f"Transfer: {transfer} bytes")
-
+    if message_size_bytes:
+        print(len(payload.encode()))
+    print("Packet Sent")
     # Wait for the specified interval before sending the next packet
     time.sleep(INTERVAL)
 
-def send_packets(ip_address, cos, inf, message_size_bytes=None):
+
+def send_packets(ip_address, tos, inf, message_size_bytes=None):
     """
-    Sends packets with specified CoS to the given IP address.
+    Sends packets with specified tos to the given IP address.
 
     Args:
         ip_address (str): The destination IP address.
-        cos (int): The Class of Service (CoS) value.
+        tos (int): The Type of Service (tos) value.
         inf (bool): Indicates whether to send packets continuously until interrupted.
         message_size_bytes (int): The size of the message payload in bytes.
     """
     try:
         if inf:
             while inf:
-                packet_crafter(ip_address, cos, message_size_bytes)
-        packet_crafter(ip_address, cos, message_size_bytes)
+                packet_crafter(ip_address, tos, message_size_bytes)
+        packet_crafter(ip_address, tos, message_size_bytes)
         
     except KeyboardInterrupt:
         print("\nSending interrupted by user. Exiting.")
         sys.exit(0)
 
 
-def receive_packets(expected_cos):
+
+def receive_packets(expected_tos):
     """
     Receives packets and displays packet information.
     
     Args:
-        expected_cos (int): The expected Class of Service (CoS) value to filter packets.
+        expected_tos (int): The expected Type of Service (tos) value to filter packets.
     
     """
     global start_time
-    packets = sniff(filter="tcp and port 12345", count=1)
+    packets = sniff(filter="udp and port 12345", count=1)
 
     if packets:
         # Extract packet information
         packet = packets[0]
         payload = packet[Raw].load.decode() if packet.haslayer(Raw) else ""
         src_ip = packet[IP].src
-        cos = packet[IP].tos >> 3
-        if expected_cos == 114:
-            expected_cos = cos
-        
-        if cos == expected_cos:
+        tos = packet[IP].tos
+        if expected_tos == 65:
+            expected_tos = calculate_bit_operation(tos, reverse = True)
+        tos = calculate_bit_operation(tos, reverse = True)
+        if tos == expected_tos:
             # Calculate transfer for this packet
             transfer = len(payload)
 
@@ -109,14 +129,14 @@ def receive_packets(expected_cos):
                 bitrate_unit = "bytes/sec"  # If elapsed_time is zero or negative
 
             # Prepare data for tabular format
-            table_data = [["Source IP", "CoS", "Transfer", f"Bitrate ({bitrate_unit})"],
-                          [src_ip, cos, transfer, f"{bitrate:.2f}"]]
+            table_data = [["Source IP", "DSCP Received", "Transfer", f"Bitrate ({bitrate_unit})"],
+                          [src_ip, tos, transfer, f"{bitrate:.2f}"]]
 
             # Print total transfer and throughput
             print(tabulate(table_data, headers="firstrow", tablefmt="fancy_grid"))
         else:
-            table_data = [["Source IP", "Denial Reason", "CoS"],
-                          [src_ip, "Ignoring packet with unexpected CoS value", cos]]
+            table_data = [["Source IP", "Denial Reason", "DSCP - ToS"],
+                          [src_ip, "Ignoring packet with unexpected DSCP - ToS value", tos]]
 
             print(tabulate(table_data,headers="firstrow", tablefmt="fancy_grid"))
 
@@ -127,28 +147,28 @@ def main():
     """
     Main function to handle command-line arguments and execute packet sending or receiving.
     """
-    parser = argparse.ArgumentParser(description="Send or receive packets with specified Class of Service (CoS)")
-    parser.add_argument("-c", metavar="IP_ADDRESS", help="Send packets with specified CoS to the given IP address")
-    parser.add_argument("-s", action="store_true", help="Expect packets with a specified CoS")
-    parser.add_argument("--cos", type=int, default = None, help="Specify the Class of Service (CoS) for the packets")
+    parser = argparse.ArgumentParser(description="Send or receive packets with specified Type of Service (tos)")
+    parser.add_argument("-c", "--client", metavar="IP_ADDRESS", help="Send packets with specified tos to the given IP address")
+    parser.add_argument("-s", "--server",action="store_true", help="Expect packets with a specified tos")
+    parser.add_argument("--tos", metavar="DSCP Code",type=int, default=None, help="Specify the DSCP code for the packets [0-56]")
     parser.add_argument("--inf", action="store_true", default=False, help="Send packets continuously until interrupted")
     parser.add_argument("--load", type=int, help="Specify the size of the packet payload in bytes")
 
     args = parser.parse_args()
 
-    if args.c:
-        if args.cos is None:
-            parser.error("The --cos argument is required when using -c")
-        send_packets(args.c, args.cos, args.inf, args.load)
+    if args.client:
+        if args.tos is None or args.tos > 56:
+            parser.error("The --tos argument is required when using -c. It should be a number between 0 and 56")
+        send_packets(args.client, args.tos, args.inf, args.load)
         
-    elif args.s:
+    elif args.server:
         # Set up signal handler for SIGINT (Ctrl+C) to exit the server
         signal.signal(signal.SIGINT, signal_handler)
-        if args.cos is None:
-            args.cos = 114
+        if args.tos is None:
+            args.tos = 65 #Above the maximum values. Used as flag to signal to the receiver it should expect the same value that it receives, i.e, don't expect. 
         # Continuously listen for packets
         while True:
-            receive_packets(args.cos)
+            receive_packets(args.tos)
     else:
         parser.print_help()
 
