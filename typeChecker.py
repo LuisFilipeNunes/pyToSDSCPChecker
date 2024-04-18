@@ -17,12 +17,13 @@ MAX_PAYLOAD_SIZE = 65535 # Maximum size allowed for TCP checksum calculation.
 
 
 def calculate_bit_operation(tos, reverse = False):  
+    # These numbers are bitshifted to the left by two zeros. 
     transformations = {
         11: 40,  12: 48,  13: 56,
         21: 72,  22: 80,  23: 88,
         31: 104, 32: 112, 33: 120,
         41: 136, 42: 144, 43: 152,
-        44: 44, 46:46
+        44: 176, 46:184
     }
     
     #go dict lookup go
