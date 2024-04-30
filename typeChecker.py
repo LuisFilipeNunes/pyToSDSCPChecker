@@ -6,6 +6,7 @@ import string
 import signal
 import sys
 import time
+import socket
 from scapy.layers.inet import IP, UDP, TCP
 from scapy.all import *
 from tabulate import tabulate
@@ -14,6 +15,28 @@ from tabulate import tabulate
 start_time = time.time()
 INTERVAL = 0.4 # Interval 40% of a second.
 MAX_PAYLOAD_SIZE = 65535 # Maximum size allowed for TCP checksum calculation.
+
+def udp_server(host, port):
+    """
+    UDP server function that listens for incoming messages.
+    """
+    # Create a UDP socket
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server_socket:
+        # Bind the socket to the host and port
+        server_socket.bind((host, port))
+        print(f"UDP server is listening on {host}:{port}")
+        # Listen for incoming messages
+        while True:
+            pass
+        
+def start_udp_server():
+    """
+    Function to start the UDP server.
+    """
+    HOST = "0.0.0.0"
+    PORT = 12345
+    
+    udp_server(HOST, PORT)
 
 
 def calculate_bit_operation(tos, reverse = False):  
@@ -91,58 +114,61 @@ def receive_packets(expected_tos):
         expected_tos (int): The expected Type of Service (tos) value to filter packets.
     
     """
-    global start_time
-    packets = sniff(filter="udp and port 12345", count=1)
+    start_time = time.time() 
 
-    if packets:
-        # Extract packet information
-        packet = packets[0]
-        payload = packet[Raw].load.decode() if packet.haslayer(Raw) else ""
-        src_ip = packet[IP].src
-        tos = packet[IP].tos
-        if expected_tos == 65:
-            expected_tos = calculate_bit_operation(tos, reverse = True)
-        tos = calculate_bit_operation(tos, reverse = True)
-        if tos == expected_tos:
-            # Calculate transfer for this packet
-            transfer = len(payload)
+    def packet_callback(packet,  expected_tos=expected_tos, start_time=start_time):
+        """
+        Callback function to handle each received packet.
+        """
+        # Check if the packet is UDP and on port 12345
+        if UDP in packet and packet[UDP].dport == 12345:
+            # Extract packet information
+            payload = packet[Raw].load.decode() if Raw in packet else ""
+            src_ip = packet[IP].src
+            tos = packet[IP].tos
+            if expected_tos == 65:
+                expected_tos = calculate_bit_operation(tos, reverse=True)
+            tos = calculate_bit_operation(tos, reverse=True)
+            if tos == expected_tos:
+                # Calculate transfer for this packet
+                transfer = len(payload)
 
-            # Calculate elapsed time since the last packet
-            current_time = time.time()
-            elapsed_time = current_time - start_time
-            start_time = current_time
-            elapsed_time = time.time() - start_time
+                # Calculate elapsed time since the last packet
+                current_time = time.time()
+                elapsed_time = current_time - start_time
+                start_time = current_time
+                elapsed_time = time.time() - start_time
 
-            if elapsed_time > 0:
-                # Calculate bitrate
-                bitrate = transfer / elapsed_time  # Convert bytes to bits
-                # Convert bitrate to KB/s or MB/s if necessary
-                if bitrate >= 1e6:  # If bitrate >= 1 Megabyte/sec
-                    bitrate = bitrate / 1e6
-                    bitrate_unit = "MB/s"
-                elif bitrate >= 1e3:  # If bitrate >= 1 Kilobyte/sec
-                    bitrate = bitrate / 1e3
-                    bitrate_unit = "KB/s"
-                else:  # Otherwise, keep it in bytes/sec
-                    bitrate_unit = "bytes/sec"
+                if elapsed_time > 0:
+                    # Calculate bitrate
+                    bitrate = transfer / elapsed_time  # Convert bytes to bits
+                    # Convert bitrate to KB/s or MB/s if necessary
+                    if bitrate >= 1e6:  # If bitrate >= 1 Megabyte/sec
+                        bitrate = bitrate / 1e6
+                        bitrate_unit = "MB/s"
+                    elif bitrate >= 1e3:  # If bitrate >= 1 Kilobyte/sec
+                        bitrate = bitrate / 1e3
+                        bitrate_unit = "KB/s"
+                    else:  # Otherwise, keep it in bytes/sec
+                        bitrate_unit = "bytes/sec"
+                else:
+                    bitrate = 0
+                    bitrate_unit = "bytes/sec"  # If elapsed_time is zero or negative
+
+                # Prepare data for tabular format
+                table_data = [["Source IP", "DSCP Received", "Transfer", f"Bitrate ({bitrate_unit})"],
+                              [src_ip, tos, transfer, f"{bitrate:.2f}"]]
+
+                # Print total transfer and throughput
+                print(tabulate(table_data, headers="firstrow", tablefmt="fancy_grid"))
             else:
-                bitrate = 0
-                bitrate_unit = "bytes/sec"  # If elapsed_time is zero or negative
+                table_data = [["Source IP", "Denial Reason", "DSCP - ToS"],
+                              [src_ip, "Ignoring packet with unexpected DSCP - ToS value", tos]]
 
-            # Prepare data for tabular format
-            table_data = [["Source IP", "DSCP Received", "Transfer", f"Bitrate ({bitrate_unit})"],
-                          [src_ip, tos, transfer, f"{bitrate:.2f}"]]
+                print(tabulate(table_data, headers="firstrow", tablefmt="fancy_grid"))
 
-            # Print total transfer and throughput
-            print(tabulate(table_data, headers="firstrow", tablefmt="fancy_grid"))
-        else:
-            table_data = [["Source IP", "Denial Reason", "DSCP - ToS"],
-                          [src_ip, "Ignoring packet with unexpected DSCP - ToS value", tos]]
-
-            print(tabulate(table_data,headers="firstrow", tablefmt="fancy_grid"))
-
-    else:
-        print("No packets received")
+    # Start sniffing packets on the network interface
+    sniff(prn=packet_callback, filter="udp", store=0)
 
 def main():
     """
@@ -163,6 +189,8 @@ def main():
         send_packets(args.client, args.tos, args.inf, args.load)
         
     elif args.server:
+        udp_server_thread = threading.Thread(target=start_udp_server)
+        udp_server_thread.start()
         # Set up signal handler for SIGINT (Ctrl+C) to exit the server
         signal.signal(signal.SIGINT, signal_handler)
         if args.tos is None:
