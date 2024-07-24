@@ -1,174 +1,12 @@
-#Luis Nunes
-
 import argparse
-import random
-import string
 import signal
 import sys
-import time
-import socket
 from scapy.layers.inet import IP, UDP, TCP
 from scapy.all import *
-from tabulate import tabulate
+from utils.client import *
+from utils.server import *
+from utils.commons import DSCP_CODES, DSCP_CODES_NUM
 
-# Global variables to track transfer and throughput
-start_time = time.time()
-INTERVAL = 0.4 # Interval 40% of a second.
-MAX_PAYLOAD_SIZE = 65535 # Maximum size allowed for TCP checksum calculation.
-
-def udp_server(host, port):
-    """
-    UDP server function that listens for incoming messages.
-    """
-    # Create a UDP socket
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server_socket:
-        # Bind the socket to the host and port
-        server_socket.bind((host, port))
-        print(f"UDP server is listening on {host}:{port}")
-        # Listen for incoming messages
-        while True:
-            pass
-        
-def start_udp_server():
-    """
-    Function to start the UDP server.
-    """
-    HOST = "0.0.0.0"
-    PORT = 12345
-    
-    udp_server(HOST, PORT)
-
-
-def calculate_bit_operation(tos, reverse = False):  
-    # These numbers are bitshifted to the left by two zeros. 
-    transformations = {
-        11: 40,  12: 48,  13: 56,
-        21: 72,  22: 80,  23: 88,
-        31: 104, 32: 112, 33: 120,
-        41: 136, 42: 144, 43: 152,
-        44: 176, 46:184
-    }
-    
-    #go dict lookup go
-    if reverse:
-        for key, value in transformations.items():
-            if value == tos:
-                return key
-        return tos/32
-        
-    if tos <= 7:
-        return tos*32
-        
-    return transformations.get(tos, 0)
-    
-def packet_crafter(ip_address, tos, message_size_bytes=None):
-    """
-    Crafts an IPv4 packet with the specified tos value and payload.
-
-    Args:
-        ip_address (str): The destination IP address.
-        tos (int): The Type of Service (tos) value.
-        message_size_bytes (int): The size of the message payload in bytes.
-    """
-    if message_size_bytes:
-        # Generate random data of the specified size
-        payload = ''.join(random.choices(string.ascii_letters + string.digits, k=message_size_bytes))
-    else:
-        payload = "Hello, this is a test message"  # Default message
-    packet = IP(dst=ip_address, tos=calculate_bit_operation(tos)) / UDP(sport=12345, dport=12345) / Raw(load=payload)
-    send(packet, verbose=False)
-    if message_size_bytes:
-        print(len(payload.encode()))
-    print("Packet Sent")
-    # Wait for the specified interval before sending the next packet
-    time.sleep(INTERVAL)
-
-
-def send_packets(ip_address, tos, inf, message_size_bytes=None):
-    """
-    Sends packets with specified tos to the given IP address.
-
-    Args:
-        ip_address (str): The destination IP address.
-        tos (int): The Type of Service (tos) value.
-        inf (bool): Indicates whether to send packets continuously until interrupted.
-        message_size_bytes (int): The size of the message payload in bytes.
-    """
-    try:
-        if inf:
-            while inf:
-                packet_crafter(ip_address, tos, message_size_bytes)
-        packet_crafter(ip_address, tos, message_size_bytes)
-        
-    except KeyboardInterrupt:
-        print("\nSending interrupted by user. Exiting.")
-        sys.exit(0)
-
-
-
-def receive_packets(expected_tos):
-    """
-    Receives packets and displays packet information.
-    
-    Args:
-        expected_tos (int): The expected Type of Service (tos) value to filter packets.
-    
-    """
-    start_time = time.time() 
-
-    def packet_callback(packet,  expected_tos=expected_tos, start_time=start_time):
-        """
-        Callback function to handle each received packet.
-        """
-        # Check if the packet is UDP and on port 12345
-        if UDP in packet and packet[UDP].dport == 12345:
-            # Extract packet information
-            payload = packet[Raw].load.decode() if Raw in packet else ""
-            src_ip = packet[IP].src
-            tos = packet[IP].tos
-            if expected_tos == 65:
-                expected_tos = calculate_bit_operation(tos, reverse=True)
-            tos = calculate_bit_operation(tos, reverse=True)
-            if tos == expected_tos:
-                # Calculate transfer for this packet
-                transfer = len(payload)
-
-                # Calculate elapsed time since the last packet
-                current_time = time.time()
-                elapsed_time = current_time - start_time
-                start_time = current_time
-                elapsed_time = time.time() - start_time
-
-                if elapsed_time > 0:
-                    # Calculate bitrate
-                    bitrate = transfer / elapsed_time  # Convert bytes to bits
-                    # Convert bitrate to KB/s or MB/s if necessary
-                    if bitrate >= 1e6:  # If bitrate >= 1 Megabyte/sec
-                        bitrate = bitrate / 1e6
-                        bitrate_unit = "MB/s"
-                    elif bitrate >= 1e3:  # If bitrate >= 1 Kilobyte/sec
-                        bitrate = bitrate / 1e3
-                        bitrate_unit = "KB/s"
-                    else:  # Otherwise, keep it in bytes/sec
-                        bitrate_unit = "bytes/sec"
-                else:
-                    bitrate = 0
-                    bitrate_unit = "bytes/sec"  # If elapsed_time is zero or negative
-
-                # Prepare data for tabular format
-                table_data = [["Source IP", "DSCP Received", "Transfer", f"Bitrate ({bitrate_unit})"],
-                              [src_ip, tos, transfer, f"{bitrate:.2f}"]]
-
-                # Print total transfer and throughput
-                print(tabulate(table_data, headers="firstrow", tablefmt="fancy_grid"))
-            else:
-                table_data = [["Source IP", "Denial Reason", "DSCP - ToS"],
-                              [src_ip, "Ignoring packet with unexpected DSCP - ToS value", tos]]
-
-                print(tabulate(table_data, headers="firstrow", tablefmt="fancy_grid"))
-
-    # Start sniffing packets on the network interface
-    sniff(prn=packet_callback, filter="udp", store=0)
 
 def main():
     """
@@ -177,27 +15,53 @@ def main():
     parser = argparse.ArgumentParser(description="Send or receive packets with specified Type of Service (tos)")
     parser.add_argument("-c", "--client", metavar="IP_ADDRESS", help="Send packets with specified tos to the given IP address")
     parser.add_argument("-s", "--server",action="store_true", help="Expect packets with a specified tos")
-    parser.add_argument("--tos", metavar="DSCP Code",type=int, default=None, help="Specify the DSCP code for the packets [0-56]")
+    parser.add_argument("--dscp", metavar="DSCP_CODE", type=str, default=None, help="Specify the DSCP code (e.g., AF11, CS0, EF, VA)")
     parser.add_argument("--inf", action="store_true", default=False, help="Send packets continuously until interrupted")
     parser.add_argument("--load", type=int, help="Specify the size of the packet payload in bytes")
+    parser.add_argument("--all", action="store_true", help="Send one packet for each DSCP value")
+    parser.add_argument("--timeout", type=int, default=22, help="Set a timeout for the visual signal for the server.")
 
     args = parser.parse_args()
+    args.dscp = args.dscp.upper() if args.dscp is not None else None
 
     if args.client:
-        if args.tos is None or args.tos > 56:
-            parser.error("The --tos argument is required when using -c. It should be a number between 0 and 56")
-        send_packets(args.client, args.tos, args.inf, args.load)
+        if args.all:
+            for dscp_code in DSCP_CODES:
+                dcsp_value = DSCP_CODES[dscp_code]
+                send_packets(args.client, dcsp_value, False, args.load)
+        else:
+            
+            if args.dscp is None:
+                parser.error("The --dscp argument is required when using -c. It should be a DSCP code (e.g., AF11, CS0, EF, VA)")
+            if args.dscp not in DSCP_CODES and args.dscp not in DSCP_CODES_NUM:
+                parser.error(f"Invalid DSCP code: {args.dscp}. Please use a valid DSCP code (e.g., AF11, CS0, EF, VA or at least its numbers.)")
+            try:
+                dcsp_value = DSCP_CODES[args.dscp]
+            except KeyError:
+                try: 
+                    dcsp_value = DSCP_CODES_NUM[args.dscp]
+                except KeyError:
+                    raise ValueError(f"Invalid DSCP value: {args.dscp}") 
+            send_packets(args.client, dcsp_value, args.inf, args.load)
         
     elif args.server:
-        udp_server_thread = threading.Thread(target=start_udp_server)
+        udp_server_thread = threading.Thread(target=start_udp_server, args=(args.timeout,))
+        udp_server_thread.daemon = True  # Set the thread as daemon
         udp_server_thread.start()
+        
         # Set up signal handler for SIGINT (Ctrl+C) to exit the server
         signal.signal(signal.SIGINT, signal_handler)
-        if args.tos is None:
-            args.tos = 65 #Above the maximum values. Used as flag to signal to the receiver it should expect the same value that it receives, i.e, don't expect. 
+        
+        if args.dscp is None:
+            args.dscp = 65 #Above the maximum values. Used as flag to signal to the receiver it should expect the same value that it receives, i.e, don't expect. 
         # Continuously listen for packets
-        while True:
-            receive_packets(args.tos)
+        
+        try:
+            while True:
+                receive_packets(args.dscp)
+        except KeyboardInterrupt:
+            print("\nServer canceled. Exiting.")
+            sys.exit(0)
     else:
         parser.print_help()
 

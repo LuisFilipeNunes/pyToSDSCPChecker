@@ -4,7 +4,7 @@ This python script facilitates the sending and receiving of UDP packets with spe
 
 *   Features: Send Packets with custom ToS values (using DSCP values, ECN always 00) to a specified IP address.
 
-*   Receive packets and display some packet information, as its load size, bitrate, and received DSCP value.
+*   Receive packets and display some packet information, as its load size and received DSCP value.
 
 *   Support for specifying the size of the packet payload.
 
@@ -22,21 +22,26 @@ This python script facilitates the sending and receiving of UDP packets with spe
 
 1.  Sending Packets:
 
-    *   Execute the script with the '-c' or "--client" flag followed by the destination IP address.
+     *   Execute the script with the '-c' or "--client" flag followed by the destination IP address.
 
-    *   use the "--tos" flag to specify thje DSCP code for the packets.(Required, should be a number between 0 and 56. )
+    *   use the "--dscp" flag to specify thje DSCP code for the packets.(Required, should be the letter + number code. )
 
     *   Optionally, use the "--inf" flag to send packets continuosly until interrupted.
 
-    *   Optionally, spcefi the size of the packet load using the "--load" flag.
-        Example: \$ python3 typeChecker.py -c 192.168.1.100 --tos 34 --inf --load 1024
+    *   Optionally, you can set the size of the packet load using the "--load" flag.
+        Example: \$ python3 typeChecker.py -c 192.168.1.100 --dscp 34 --inf --load 1024
+    
+    * Optionally, you can use the --all flag, which will send one packet with each DSCP. 
 
 2.  Receiving packets:
 
     *   Execute the script with the '-s' or "--server" flag.
 
-    *   Optionally, use the "--tos" flag to specify the expected DSCP code for incoming packets. If not provided, the script will expect the same DSCP value as received.
-        Example: \$ python3 typeChecker.py -s --tos 34
+    *   Optionally, use the "--dscp" flag to specify the expected DSCP code for incoming packets. If not provided, the script will expect the same DSCP value as received.
+        Example: \$ python3 typeChecker.py -s --dscp 34
+
+    * Optionally, use the "--timeout" flag to specify, in seconds, how many seconds to await for a packet before timing out and printing a signal to the user. If not provided, the script will wait for 22 seconds. 
+    *   The script will display the received packet information in a tabular format, including the IP address, DSCP value, and packet size.
 
 ## DSCP Code Options
 
@@ -67,7 +72,7 @@ Below is a list of DSCP (Differentiated Services Code Point) codes along with th
 | 46         | EF\*          | Expedited Forwarding   |
 | 44         | VOICE-ADMIT\* | Voice Admit            |
 
-Please note that the DSCP codes EF and Voice Admit correspond to values 46 and 44, respectively. Additionally, when specifying DSCP codes, use the numerical value, e.g., AF11 should be represented as 11.
+Please note that the DSCP codes EF and Voice Admit correspond to values 46 and 44, respectively. Additionally, when specifying DSCP codes, use the letter + numerical value, e.g., AF11 should be represented as af11 or AF11. Numbers could be used. So, AF could be represented as 11, but for better practice, use the entire code. 
 
 ### Notes
 
@@ -76,14 +81,3 @@ Please note that the DSCP codes EF and Voice Admit correspond to values 46 and 4
 *   Packet payload is "Hello, this is a test message", which is 29 bytes long, unless a specific size is provided, which then will be random generated data.
 
 *   The script supports DSCP values ranging from 0 to 56. DSCP values outside this range will be ignored.
-
-*   Transfer rate is calculated based on the time elapsed between received packets.
-
-<!---->
-
-       ╒═════════════╤═════════════════╤════════════╤══════════════════╕
-       │ Source IP   │   DSCP Received │   Transfer │   Bitrate (MB/s) │
-       ╞═════════════╪═════════════════╪════════════╪══════════════════╡
-       │ 60.60.60.2  │               5 │         29 │             9.36 │
-       ╘═════════════╧═════════════════╧════════════╧══════════════════╛
-
